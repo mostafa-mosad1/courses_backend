@@ -1,0 +1,76 @@
+{
+  "info": {
+    "name": "LMS API - Local",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000/api" }
+  ],
+  "item": [
+    {
+      "name": "Auth - Register",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Mostafa\",\n  \"email\": \"mostafa@example.com\",\n  \"password\": \"Secret123!\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/auth/register" }
+      }
+    },
+    {
+      "name": "Auth - Login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"mostafa@example.com\",\n  \"password\": \"Secret123!\"\n}"
+        },  
+        "url": { "raw": "{{baseUrl}}/auth/login" }
+      }
+    },
+    {
+      "name": "Courses - List",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/courses?q=programming" }
+      }
+    },
+    {
+      "name": "Courses - Get by identifier",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/courses/CO000001" }
+      }
+    },
+    {
+      "name": "Categories - List",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/categories" }
+      }
+    },
+    {
+      "name": "Search",
+      "request": {
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/search?q=design" }
+      }
+    },
+    {
+      "name": "Contact - Submit",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Visitor\",\n  \"email\": \"visitor@example.com\",\n  \"subject\": \"Question\",\n  \"message\": \"Hello from Postman\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/contact" }
+      }
+    }
+  ]
+}
