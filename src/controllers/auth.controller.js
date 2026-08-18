@@ -1,4 +1,4 @@
-const pool = require('../config/db');
+const { query, queryOne, execute } = require('../config/db');
 const bcrypt = require('bcryptjs');
 const { randomUUID } = require('crypto');
 
@@ -44,11 +44,10 @@ exports.me = async (req, res) => {
     let decoded;
     try { decoded = jwt.verify(token, JWT_SECRET); } catch (e) { return res.status(401).json({ success: false, error: 'Invalid token' }); }
 
-    const [rows] = await pool.query(
+    const user = await queryOne(
       'SELECT id, name, email, image, role, is_active, created_at FROM users WHERE id = ? LIMIT 1',
       [decoded.id]
     );
-    const user = rows && rows[0];
     if (!user) return res.status(404).json({ success: false, error: 'User not found' });
     return res.json({ success: true, data: { user } });
   } catch (err) {
@@ -66,7 +65,7 @@ exports.register = async (req, res) => {
   try {
     const hashed = await bcrypt.hash(password, 10);
     const id = randomUUID();
-    await pool.query('INSERT INTO users (id, name, email, password) VALUES (?,?,?,?)', [id, name, email, hashed]);
+    await execute('INSERT INTO users (id, name, email, password, role) VALUES (?,?,?,?,?)', [id, name, email, hashed, 'STUDENT']);
     res.json({ success: true, data: { id, name, email } });
   } catch (err) {
     console.error(err);
@@ -80,8 +79,7 @@ exports.register = async (req, res) => {
     if (!email || !password) return res.status(400).json({ success: false, error: 'Missing fields' });
 
     try {
-      const [rows] = await pool.query('SELECT * FROM users WHERE email = ? LIMIT 1', [email.toLowerCase().trim()]);
-      const user = rows && rows[0];
+      const user = await queryOne('SELECT * FROM users WHERE email = ? LIMIT 1', [email.toLowerCase().trim()]);
       if (!user || !user.password) return res.status(401).json({ success: false, error: 'Invalid credentials' });
       if (user.is_active === 0) return res.status(403).json({ success: false, error: 'Account suspended' });
 
@@ -114,8 +112,7 @@ exports.register = async (req, res) => {
     const { email } = req.body || {};
     if (!email) return res.status(400).json({ success: false, error: 'Missing email' });
     try {
-      const [rows] = await pool.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email.toLowerCase().trim()]);
-      const user = rows && rows[0];
+      const user = await queryOne('SELECT id FROM users WHERE email = ? LIMIT 1', [email.toLowerCase().trim()]);
       if (!user) {
         // Do not reveal whether email exists
         return res.json({ success: true, data: { message: 'If the email exists, a reset link was sent' } });
@@ -123,7 +120,7 @@ exports.register = async (req, res) => {
 
       const token = randomUUID();
       const id = randomUUID();
-      await pool.query(
+      await execute(
         `INSERT INTO verification_tokens (id, user_id, token, type, expires_at)
          VALUES (?, ?, ?, 'PASSWORD_RESET', DATE_ADD(NOW(), INTERVAL 1 HOUR))`,
         [id, user.id, token]
@@ -144,16 +141,15 @@ exports.register = async (req, res) => {
     const { token, password } = req.body || {};
     if (!token || !password) return res.status(400).json({ success: false, error: 'Missing token or password' });
     try {
-      const [rows] = await pool.query(
+      const vt = await queryOne(
         'SELECT * FROM verification_tokens WHERE token = ? AND type = ? AND used_at IS NULL AND expires_at > NOW() LIMIT 1',
         [token, 'PASSWORD_RESET']
       );
-      const vt = rows && rows[0];
       if (!vt) return res.status(400).json({ success: false, error: 'Invalid or expired token' });
 
       const hashed = await bcrypt.hash(password, 10);
-      await pool.query('UPDATE users SET password = ? WHERE id = ?', [hashed, vt.user_id]);
-      await pool.query('UPDATE verification_tokens SET used_at = NOW() WHERE id = ?', [vt.id]);
+      await execute('UPDATE users SET password = ? WHERE id = ?', [hashed, vt.user_id]);
+      await execute('UPDATE verification_tokens SET used_at = NOW() WHERE id = ?', [vt.id]);
 
       return res.json({ success: true, data: { message: 'Password reset successful' } });
     } catch (err) {
