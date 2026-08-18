@@ -19,7 +19,10 @@ const {
   getWishlist,
   addToWishlist,
   removeFromWishlist,
-  addReview
+  addReview,
+  getNotifications,
+  markNotificationRead,
+  markAllNotificationsRead
 } = require('../controllers/dashboard.controller');
 
 // Middleware to protect all dashboard routes
@@ -86,6 +89,11 @@ router.delete('/wishlist/:courseId', removeFromWishlist);
 
 // Reviews routes
 router.post('/reviews', addReview);
+
+// Notifications routes
+router.get('/notifications', getNotifications);
+router.patch('/notifications/:id/read', markNotificationRead);
+router.patch('/notifications/read-all', markAllNotificationsRead);
 
 // GET /api/dashboard/settings
 router.get('/settings', getSettings);

@@ -8,6 +8,7 @@ const search = require('./search');
 const stats = require('./stats');
 const certificates = require('./certificates');
 const dashboard = require('./dashboard');
+const enrollments = require('./enrollments');
 const { home } = require('../controllers/public.controller');
 
 const router = express.Router();
@@ -47,5 +48,6 @@ router.use('/search', search);
 router.use('/stats', stats);
 router.use('/certificates', certificates);
 router.use('/dashboard', dashboard);
+router.use('/enrollments', enrollments);
 
 module.exports = router;

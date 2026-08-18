@@ -792,3 +792,72 @@ exports.addReview = async (req, res) => {
     res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
   }
 };
+
+// GET /api/dashboard/notifications
+exports.getNotifications = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    console.log('Fetching notifications for userId:', userId);
+
+    const notifications = await query(
+      `SELECT id, type, title, message, link, is_read, created_at
+       FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+      [userId]
+    );
+
+    const unreadCount = await queryOne(
+      "SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND is_read = 0",
+      [userId]
+    );
+
+    console.log('Notifications count:', notifications.length);
+    console.log('Unread count:', unreadCount?.count);
+
+    res.json({ success: true, data: notifications, meta: { unread_count: unreadCount?.count || 0 } });
+  } catch (err) {
+    console.error('getNotifications error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+// PATCH /api/dashboard/notifications/:id/read
+exports.markNotificationRead = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const userId = req.user.id;
+
+    const notification = await queryOne(
+      "SELECT * FROM notifications WHERE id = ? AND user_id = ? LIMIT 1",
+      [id, userId]
+    );
+    if (!notification) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'الإشعار غير موجود' } });
+    }
+
+    await execute("UPDATE notifications SET is_read = 1, read_at = NOW() WHERE id = ?", [id]);
+
+    res.json({ success: true, data: { message: 'تم تحديث الإشعار' } });
+  } catch (err) {
+    console.error('markNotificationRead error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+// PATCH /api/dashboard/notifications/read-all
+exports.markAllNotificationsRead = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    await execute("UPDATE notifications SET is_read = 1, read_at = NOW() WHERE user_id = ? AND is_read = 0", [userId]);
+
+    res.json({ success: true, data: { message: 'تم تحديث كل الإشعارات' } });
+  } catch (err) {
+    console.error('markAllNotificationsRead error', err);
+    // If table doesn't exist, just return success
+    if (err.code === 'ER_NO_SUCH_TABLE') {
+      res.json({ success: true, data: { message: 'تم تحديث كل الإشعارات' } });
+    } else {
+      res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+    }
+  }
+};
