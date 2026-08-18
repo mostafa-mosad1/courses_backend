@@ -8,7 +8,18 @@ const {
   updateProfile,
   enrollFree,
   lessonDetail,
-  completeLesson
+  completeLesson,
+  updateLessonProgress,
+  getLessonProgress,
+  myCertificates,
+  requestCertificate,
+  getSettings,
+  updateSettings,
+  changePassword,
+  getWishlist,
+  addToWishlist,
+  removeFromWishlist,
+  addReview
 } = require('../controllers/dashboard.controller');
 
 // Middleware to protect all dashboard routes
@@ -56,12 +67,29 @@ router.get('/courses', myCourses);
 router.get('/courses/:id', courseDetail);
 router.get('/courses/:courseId/lessons/:lessonId', lessonDetail);
 router.post('/courses/:courseId/lessons/:lessonId/complete', completeLesson);
+router.get('/courses/:courseId/lessons/:lessonId/progress', getLessonProgress);
+router.patch('/courses/:courseId/lessons/:lessonId/progress', updateLessonProgress);
 
 // POST /api/dashboard/enroll/:courseId - enroll in free course
 router.post('/enroll/:courseId', enrollFree);
 
+// GET /api/dashboard/certificates
+router.get('/certificates', myCertificates);
+router.post('/certificates', requestCertificate);
+
 // GET /api/dashboard/profile
 router.get('/profile', getProfile);
 router.patch('/profile', updateProfile);
+router.get('/wishlist', getWishlist);
+router.post('/wishlist', addToWishlist);
+router.delete('/wishlist/:courseId', removeFromWishlist);
+
+// Reviews routes
+router.post('/reviews', addReview);
+
+// GET /api/dashboard/settings
+router.get('/settings', getSettings);
+router.patch('/settings', updateSettings);
+router.patch('/settings/password', changePassword);
 
 module.exports = router;

@@ -2,7 +2,7 @@ const { query, queryOne, execute, transaction } = require('../config/db');
 const bcrypt = require('bcryptjs');
 const { randomUUID } = require('crypto');
 
-// Dashboard controller
+// Dashboard controller - password change endpoint added
 
 // Helper: check if user is enrolled in course
 async function getEnrollment(userId, courseId) {
@@ -390,6 +390,405 @@ exports.completeLesson = async (req, res) => {
     res.json({ success: true, data: { progress } });
   } catch (err) {
     console.error('completeLesson error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+// PATCH /api/dashboard/courses/:courseId/lessons/:lessonId/progress
+exports.updateLessonProgress = async (req, res) => {
+  try {
+    const courseId = req.params.courseId;
+    const lessonId = req.params.lessonId;
+    const { watched_seconds } = req.body;
+    const userId = req.user.id;
+
+    if (watched_seconds === undefined || watched_seconds === null) {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'watched_seconds required' } });
+    }
+
+    const enrollment = await getEnrollment(userId, courseId);
+    if (!enrollment) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'إنت مش مشترك في الكورس ده' } });
+    }
+
+    const lesson = await queryOne(
+      `SELECT l.id, l.duration FROM lessons l JOIN sections s ON s.id = l.section_id
+       WHERE l.id = ? AND s.course_id = ? LIMIT 1`,
+      [lessonId, courseId]
+    );
+    if (!lesson) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'الدرس غير موجود' } });
+    }
+
+    const existing = await queryOne(
+      "SELECT * FROM lesson_progress WHERE user_id = ? AND lesson_id = ? LIMIT 1",
+      [userId, lessonId]
+    );
+
+    if (existing) {
+      await execute(
+        "UPDATE lesson_progress SET watched_seconds = ?, updated_at = NOW() WHERE id = ?",
+        [watched_seconds, existing.id]
+      );
+    } else {
+      const id = randomUUID();
+      await execute(
+        "INSERT INTO lesson_progress (id, user_id, lesson_id, watched_seconds) VALUES (?, ?, ?, ?)",
+        [id, userId, lessonId, watched_seconds]
+      );
+    }
+
+    await execute("UPDATE enrollments SET last_access_at = NOW() WHERE id = ?", [enrollment.id]);
+
+    res.json({ success: true, data: { watched_seconds } });
+  } catch (err) {
+    console.error('updateLessonProgress error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+// GET /api/dashboard/courses/:courseId/lessons/:lessonId/progress
+exports.getLessonProgress = async (req, res) => {
+  try {
+    const courseId = req.params.courseId;
+    const lessonId = req.params.lessonId;
+    const userId = req.user.id;
+
+    const enrollment = await getEnrollment(userId, courseId);
+    if (!enrollment) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'إنت مش مشترك في الكورس ده' } });
+    }
+
+    const lesson = await queryOne(
+      `SELECT l.id, l.duration FROM lessons l JOIN sections s ON s.id = l.section_id
+       WHERE l.id = ? AND s.course_id = ? LIMIT 1`,
+      [lessonId, courseId]
+    );
+    if (!lesson) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'الدرس غير موجود' } });
+    }
+
+    const progress = await queryOne(
+      "SELECT * FROM lesson_progress WHERE user_id = ? AND lesson_id = ? LIMIT 1",
+      [userId, lessonId]
+    );
+
+    res.json({
+      success: true,
+      data: progress || { watched_seconds: 0, is_completed: 0 }
+    });
+  } catch (err) {
+    console.error('getLessonProgress error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+// GET /api/dashboard/certificates
+exports.myCertificates = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const certificates = await query(
+      `SELECT cert.*, c.title AS course_title, c.slug AS course_slug,
+              u.name AS user_name, i.name AS instructor_name
+       FROM certificates cert
+       JOIN courses c ON c.id = cert.course_id
+       JOIN users u ON u.id = cert.user_id
+       LEFT JOIN users i ON i.id = c.instructor_id
+       WHERE cert.user_id = ?
+       ORDER BY cert.issued_at DESC`,
+      [userId]
+    );
+
+    res.json({ success: true, data: certificates });
+  } catch (err) {
+    console.error('myCertificates error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+// POST /api/dashboard/certificates - request certificate for completed course
+exports.requestCertificate = async (req, res) => {
+  try {
+    const { courseId } = req.body;
+    const userId = req.user.id;
+
+    if (!courseId) {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'courseId required' } });
+    }
+
+    const enrollment = await getEnrollment(userId, courseId);
+    if (!enrollment) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'إنت مش مشترك في الكورس ده' } });
+    }
+
+    if (enrollment.status !== 'COMPLETED') {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'الكورس مش مكتمل بعد' } });
+    }
+
+    const existing = await queryOne(
+      "SELECT * FROM certificates WHERE user_id = ? AND course_id = ? LIMIT 1",
+      [userId, courseId]
+    );
+    if (existing) {
+      return res.status(400).json({ success: false, error: { code: 'CONFLICT', message: 'عندك شهادة للكورس ده بالفعل' } });
+    }
+
+    const course = await queryOne("SELECT id, title FROM courses WHERE id = ? LIMIT 1", [courseId]);
+    if (!course) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'الكورس غير موجود' } });
+    }
+
+    const serial = `CERT-${randomUUID().replace(/-/g, '').substring(0, 8).toUpperCase()}`;
+    const id = randomUUID();
+
+    await execute(
+      "INSERT INTO certificates (id, user_id, course_id, serial, issued_at) VALUES (?, ?, ?, ?, NOW())",
+      [id, userId, courseId, serial]
+    );
+
+    const certificate = await queryOne("SELECT * FROM certificates WHERE id = ?", [id]);
+    res.json({ success: true, data: certificate });
+  } catch (err) {
+    console.error('requestCertificate error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+// GET /api/dashboard/settings
+exports.getSettings = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const user = await queryOne(
+      "SELECT id, name, email, image, bio, phone, locale, email_notifications FROM users WHERE id = ?",
+      [userId]
+    );
+
+    res.json({ success: true, data: user });
+  } catch (err) {
+    console.error('getSettings error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+// PATCH /api/dashboard/settings
+exports.updateSettings = async (req, res) => {
+  try {
+    const { name, bio, phone, image, locale, email_notifications } = req.body;
+    const userId = req.user.id;
+
+    const fields = [];
+    const params = [];
+
+    if (name !== undefined) { fields.push("name = ?"); params.push(name.trim()); }
+    if (bio !== undefined) { fields.push("bio = ?"); params.push(bio); }
+    if (phone !== undefined) { fields.push("phone = ?"); params.push(phone); }
+    if (image !== undefined) { fields.push("image = ?"); params.push(image); }
+    if (locale !== undefined) { fields.push("locale = ?"); params.push(locale); }
+    if (email_notifications !== undefined) { fields.push("email_notifications = ?"); params.push(email_notifications ? 1 : 0); }
+
+    if (!fields.length) {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'مفيش حاجة للتعديل' } });
+    }
+
+    params.push(userId);
+    await execute(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`, params);
+
+    const user = await queryOne(
+      "SELECT id, name, email, image, bio, phone, locale, email_notifications FROM users WHERE id = ?",
+      [userId]
+    );
+
+    res.json({ success: true, data: user });
+  } catch (err) {
+    console.error('updateSettings error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+// PATCH /api/dashboard/settings/password
+exports.changePassword = async (req, res) => {
+  try {
+    const { current_password, new_password, currentPassword, newPassword } = req.body;
+    const currentPasswordValue = current_password || currentPassword;
+    const newPasswordValue = new_password || newPassword;
+    const userId = req.user.id;
+
+    if (!currentPasswordValue || !newPasswordValue) {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'current_password and new_password required' } });
+    }
+
+    if (newPasswordValue.length < 6) {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'كلمة المرور لازم تكون 6 حروف على الأقل' } });
+    }
+
+    const user = await queryOne("SELECT id, password FROM users WHERE id = ? LIMIT 1", [userId]);
+    if (!user) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'المستخدم غير موجود' } });
+    }
+
+    const match = await bcrypt.compare(currentPasswordValue, user.password);
+    if (!match) {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'كلمة المرور الحالية غلط' } });
+    }
+
+    const hashed = await bcrypt.hash(newPasswordValue, 10);
+    await execute("UPDATE users SET password = ? WHERE id = ?", [hashed, userId]);
+
+    res.json({ success: true, data: { message: 'كلمة المرور اتغيرت بنجاح' } });
+  } catch (err) {
+    console.error('changePassword error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+
+// GET /api/dashboard/wishlist
+exports.getWishlist = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const wishlist = await query(
+      `SELECT w.id, w.created_at, c.id AS course_id, c.title, c.slug, c.thumbnail,
+              c.short_description, c.price, c.discount_price, c.rating_avg, c.students_count,
+              u.name AS instructor_name
+       FROM wishlist w
+       JOIN courses c ON c.id = w.course_id
+       LEFT JOIN users u ON u.id = c.instructor_id
+       WHERE w.user_id = ?
+       ORDER BY w.created_at DESC`,
+      [userId]
+    );
+    res.json({ success: true, data: wishlist });
+  } catch (err) {
+    console.error('getWishlist error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+// POST /api/dashboard/wishlist
+exports.addToWishlist = async (req, res) => {
+  try {
+    const { courseId } = req.body;
+    const userId = req.user.id;
+
+    if (!courseId) {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'courseId مطلوب' } });
+    }
+
+    const course = await queryOne("SELECT id FROM courses WHERE id = ? LIMIT 1", [courseId]);
+    if (!course) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'الكورس غير موجود' } });
+    }
+
+    const existing = await queryOne(
+      "SELECT * FROM wishlist WHERE user_id = ? AND course_id = ? LIMIT 1",
+      [userId, courseId]
+    );
+    if (existing) {
+      return res.status(400).json({ success: false, error: { code: 'CONFLICT', message: 'الكورس موجود بالفعل في المفضلة' } });
+    }
+
+    const id = randomUUID();
+    await execute(
+      "INSERT INTO wishlist (id, user_id, course_id, created_at) VALUES (?, ?, ?, NOW())",
+      [id, userId, courseId]
+    );
+
+    res.json({ success: true, data: { id, courseId } });
+  } catch (err) {
+    console.error('addToWishlist error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+// DELETE /api/dashboard/wishlist/:courseId
+exports.removeFromWishlist = async (req, res) => {
+  try {
+    const courseId = req.params.courseId;
+    const userId = req.user.id;
+
+    if (!courseId) {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'courseId مطلوب' } });
+    }
+
+    const existing = await queryOne(
+      "SELECT * FROM wishlist WHERE user_id = ? AND course_id = ? LIMIT 1",
+      [userId, courseId]
+    );
+    if (!existing) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'الكورس مش موجود في المفضلة' } });
+    }
+
+    await execute("DELETE FROM wishlist WHERE user_id = ? AND course_id = ?", [userId, courseId]);
+
+    res.json({ success: true, data: { message: 'تم الحذف من المفضلة' } });
+  } catch (err) {
+    console.error('removeFromWishlist error', err);
+    res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
+  }
+};
+
+// POST /api/dashboard/reviews
+exports.addReview = async (req, res) => {
+  try {
+    const { courseId, rating, comment } = req.body;
+    const userId = req.user.id;
+
+    if (!courseId || !rating) {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'courseId و rating مطلوبين' } });
+    }
+
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'rating لازم يكون بين 1 و 5' } });
+    }
+
+    // Check if user is enrolled in the course
+    const enrollment = await getEnrollment(userId, courseId);
+    if (!enrollment) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'لازم تكون مشترك في الكورس عشان تكتب review' } });
+    }
+
+    // Check if course exists
+    const course = await queryOne("SELECT id FROM courses WHERE id = ? LIMIT 1", [courseId]);
+    if (!course) {
+      return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'الكورس غير موجود' } });
+    }
+
+    // Check if user already reviewed
+    const existing = await queryOne(
+      "SELECT * FROM reviews WHERE user_id = ? AND course_id = ? LIMIT 1",
+      [userId, courseId]
+    );
+    if (existing) {
+      return res.status(400).json({ success: false, error: { code: 'CONFLICT', message: 'أنت كتبت review بالفعل للكورس ده' } });
+    }
+
+    const id = randomUUID();
+    await execute(
+      "INSERT INTO reviews (id, user_id, course_id, rating, comment, is_approved, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, NOW(), NOW())",
+      [id, userId, courseId, rating, comment || null]
+    );
+
+    // Update course rating
+    const [{ avg, count }] = await query(
+      `SELECT AVG(rating) AS avg, COUNT(*) AS count FROM reviews WHERE course_id = ? AND is_approved = 1`,
+      [courseId]
+    );
+    await execute(
+      "UPDATE courses SET rating_avg = ?, reviews_count = ? WHERE id = ?",
+      [avg ? parseFloat(avg.toFixed(2)) : 0, count, courseId]
+    );
+
+    const review = await queryOne(
+      `SELECT r.id, r.rating, r.comment, r.created_at, u.name AS user_name
+       FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.id = ?`,
+      [id]
+    );
+
+    res.json({ success: true, data: review });
+  } catch (err) {
+    console.error('addReview error', err);
     res.status(500).json({ success: false, error: { code: 'SERVER_ERROR', message: 'Server error' } });
   }
 };
