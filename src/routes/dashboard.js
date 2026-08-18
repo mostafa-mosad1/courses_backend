@@ -8,7 +8,11 @@ const {
   updateProfile,
   enrollFree,
   lessonDetail,
-  completeLesson
+  completeLesson,
+  getWishlist,
+  addToWishlist,
+  removeFromWishlist,
+  addReview
 } = require('../controllers/dashboard.controller');
 
 // Middleware to protect all dashboard routes
@@ -63,5 +67,13 @@ router.post('/enroll/:courseId', enrollFree);
 // GET /api/dashboard/profile
 router.get('/profile', getProfile);
 router.patch('/profile', updateProfile);
+
+// Wishlist routes
+router.get('/wishlist', getWishlist);
+router.post('/wishlist', addToWishlist);
+router.delete('/wishlist/:courseId', removeFromWishlist);
+
+// Reviews routes
+router.post('/reviews', addReview);
 
 module.exports = router;
