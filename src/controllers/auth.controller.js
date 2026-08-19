@@ -56,8 +56,9 @@ exports.me = async (req, res) => {
   }
 };
 
+
 exports.register = async (req, res) => {
-  const { name, email, password } = req.body || {};
+  const { name, email, password, role } = req.body || {};
   if (!name || !email || !password) {
     return res.status(400).json({ success: false, error: 'Missing fields' });
   }
@@ -65,8 +66,22 @@ exports.register = async (req, res) => {
   try {
     const hashed = await bcrypt.hash(password, 10);
     const id = randomUUID();
-    await execute('INSERT INTO users (id, name, email, password, role) VALUES (?,?,?,?,?)', [id, name, email, hashed, 'STUDENT']);
-    res.json({ success: true, data: { id, name, email } });
+    
+    // Set role: if role is "Admin" (case-insensitive), set to ADMIN
+    // if role is "Instructor" (case-insensitive), set to INSTRUCTOR
+    // otherwise STUDENT
+    let userRole = 'STUDENT';
+    if (role) {
+      const roleLower = role.toLowerCase();
+      if (roleLower === 'admin') {
+        userRole = 'ADMIN';
+      } else if (roleLower === 'instructor') {
+        userRole = 'INSTRUCTOR';
+      }
+    }
+    
+    await execute('INSERT INTO users (id, name, email, password, role) VALUES (?,?,?,?,?)', [id, name, email, hashed, userRole]);
+    res.json({ success: true, data: { id, name, email, role: userRole } });
   } catch (err) {
     console.error(err);
     if (err && err.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, error: 'Email already exists' });

@@ -9,6 +9,8 @@ const stats = require('./stats');
 const certificates = require('./certificates');
 const dashboard = require('./dashboard');
 const enrollments = require('./enrollments');
+const admin = require('./admin');
+const instructor = require('./instructor');
 const { home } = require('../controllers/public.controller');
 
 const router = express.Router();
@@ -49,5 +51,7 @@ router.use('/stats', stats);
 router.use('/certificates', certificates);
 router.use('/dashboard', dashboard);
 router.use('/enrollments', enrollments);
+router.use('/admin', admin);
+router.use('/instructor', instructor);
 
 module.exports = router;
