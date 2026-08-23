@@ -14,9 +14,14 @@ async function start() {
     console.error('❌ Database connection failed', err.message || err);
   }
 
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-  });
+  // Only listen if not running on Vercel
+  if (process.env.VERCEL) {
+    module.exports = app;
+  } else {
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on http://localhost:${PORT}`);
+    });
+  }
 }
 
 start();
