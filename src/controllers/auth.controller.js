@@ -105,6 +105,12 @@ exports.register = async (req, res) => {
       setAuthCookie(res, token);
 
       const publicUser = { id: user.id, name: user.name, email: user.email, role: user.role, image: user.image };
+
+      // Add CORS headers
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
       return res.json({ success: true, data: { token, user: publicUser } });
     } catch (err) {
       console.error('login error', err && err.message ? err.message : err);
